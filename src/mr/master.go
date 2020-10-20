@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TaskStatusReady ready status const of task
 const (
 	TaskStatusReady   = 0
 	TaskStatusQueue   = 1
@@ -18,29 +19,33 @@ const (
 	TaskStatusErr     = 4
 )
 
+// MaxTaskRunTime time const
 const (
 	MaxTaskRunTime   = time.Second * 5
 	ScheduleInterval = time.Millisecond * 500
 )
 
+// TaskStat include status ,worker'id, start time use for timeout
 type TaskStat struct {
 	Status    int
-	WorkerId  int
+	WorkerID  int
 	StartTime time.Time
 }
 
+// Master struct
 type Master struct {
 	// Your definitions here.
 	files     []string
 	nReduce   int
 	taskPhase TaskPhase
-	taskStats []TaskStat
+	taskStats []TaskStat // statu slice of tasks
 	mu        sync.Mutex
 	done      bool
-	workerSeq int
+	workerSeq int // worker seq use as worker id
 	taskCh    chan Task
 }
 
+// create a task
 func (m *Master) getTask(taskSeq int) Task {
 	task := Task{
 		FileName: "",
@@ -67,6 +72,7 @@ func (m *Master) schedule() {
 	allFinish := true
 	for index, t := range m.taskStats {
 		switch t.Status {
+		// ready task to qune
 		case TaskStatusReady:
 			allFinish = false
 			m.taskCh <- m.getTask(index)
@@ -75,11 +81,13 @@ func (m *Master) schedule() {
 			allFinish = false
 		case TaskStatusRunning:
 			allFinish = false
+			// timeout queue this task again.
 			if time.Now().Sub(t.StartTime) > MaxTaskRunTime {
 				m.taskStats[index].Status = TaskStatusQueue
 				m.taskCh <- m.getTask(index)
 			}
 		case TaskStatusFinish:
+			// err queue this task again.
 		case TaskStatusErr:
 			allFinish = false
 			m.taskStats[index].Status = TaskStatusQueue
@@ -113,15 +121,17 @@ func (m *Master) regTask(args *TaskArgs, task *Task) {
 	defer m.mu.Unlock()
 
 	if task.Phase != m.taskPhase {
+		// neq: not equal
 		panic("req Task phase neq")
 	}
-
 	m.taskStats[task.Seq].Status = TaskStatusRunning
-	m.taskStats[task.Seq].WorkerId = args.WorkerId
+	m.taskStats[task.Seq].WorkerID = args.WorkerID
 	m.taskStats[task.Seq].StartTime = time.Now()
 }
 
 // Your code here -- RPC handlers for the worker to call.
+
+// GetOneTask rpc called by worker to get one task.
 func (m *Master) GetOneTask(args *TaskArgs, reply *TaskReply) error {
 	task := <-m.taskCh
 	reply.Task = &task
@@ -133,13 +143,14 @@ func (m *Master) GetOneTask(args *TaskArgs, reply *TaskReply) error {
 	return nil
 }
 
+// ReportTask rpc called by worker to report a task's status.
 func (m *Master) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	DPrintf("get report task: %+v, taskPhase: %+v", args, m.taskPhase)
 
-	if m.taskPhase != args.Phase || args.WorkerId != m.taskStats[args.Seq].WorkerId {
+	if m.taskPhase != args.Phase || args.WorkerID != m.taskStats[args.Seq].WorkerID {
 		return nil
 	}
 
@@ -153,11 +164,12 @@ func (m *Master) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) error 
 	return nil
 }
 
+// RegWorker rpc called by worker to register a worker.
 func (m *Master) RegWorker(args *RegisterArgs, reply *RegisterReply) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.workerSeq += 1
-	reply.WorkerId = m.workerSeq
+	m.workerSeq++
+	reply.WorkerID = m.workerSeq
 	return nil
 }
 
@@ -170,6 +182,7 @@ func (m *Master) server() {
 	//l, e := net.Listen("tcp", ":1234")
 	sockname := masterSock()
 	os.Remove(sockname)
+	// unix domain socket
 	l, e := net.Listen("unix", sockname)
 	if e != nil {
 		log.Fatal("listen error:", e)
@@ -177,7 +190,7 @@ func (m *Master) server() {
 	go http.Serve(l, nil)
 }
 
-//
+// Done return m.done
 // main/mrmaster.go calls Done() periodically to find out
 // if the entire job has finished.
 //
@@ -195,14 +208,16 @@ func (m *Master) tickSchedule() {
 	}
 }
 
-//
-// create a Master.
+// MakeMaster create a Master.
+// main/mrmaster.go calls this function.
+// nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{}
 	m.mu = sync.Mutex{}
 	m.nReduce = nReduce
 	m.files = files
+	// init the chan to the bigger size
 	if nReduce > len(files) {
 		m.taskCh = make(chan Task, nReduce)
 	} else {

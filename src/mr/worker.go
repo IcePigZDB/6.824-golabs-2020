@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-//
+// KeyValue a struct of key value map :{"how",1}
 // Map functions return a slice of KeyValue.
 //
 type KeyValue struct {
@@ -29,6 +29,8 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+// Worker function is called by main/mrworker.
+//
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
@@ -45,7 +47,7 @@ func Worker(mapf func(string, string) []KeyValue,
 }
 
 type worker struct {
-	id      int
+	id      int // worker id
 	mapf    func(string, string) []KeyValue
 	reducef func(string, []string) string
 }
@@ -64,7 +66,7 @@ func (w *worker) run() {
 
 func (w *worker) reqTask() Task {
 	args := TaskArgs{}
-	args.WorkerId = w.id
+	args.WorkerID = w.id
 	reply := TaskReply{}
 
 	if ok := call("Master.GetOneTask", &args, &reply); !ok {
@@ -110,6 +112,7 @@ func (w *worker) doMapTask(t Task) {
 			w.reportTask(t, false, err)
 			return
 		}
+		// json.NewEcnoder(f),Encode write the keyvalue to the file .
 		enc := json.NewEncoder(f)
 		for _, kv := range l {
 			if err := enc.Encode(&kv); err != nil {
@@ -167,7 +170,7 @@ func (w *worker) reportTask(t Task, done bool, err error) {
 	args.Done = done
 	args.Seq = t.Seq
 	args.Phase = t.Phase
-	args.WorkerId = w.id
+	args.WorkerID = w.id
 	reply := ReportTaskReply{}
 	if ok := call("Master.ReportTask", &args, &reply); !ok {
 		DPrintf("report task fail:%+v", args)
@@ -180,7 +183,7 @@ func (w *worker) register() {
 	if ok := call("Master.RegWorker", args, reply); !ok {
 		log.Fatal("reg fail")
 	}
-	w.id = reply.WorkerId
+	w.id = reply.WorkerID
 }
 
 //
